@@ -1,3 +1,10 @@
+2007-07-08  Steven Grimm  <sgrimm@facebook.com>
+
+	* Item stats commands weren't thread-safe; wrap them with locks
+	  when compiled in multithreaded mode.
+	* The "stats items" command now works again; it broke with the
+	  introduction of the powers-of-N chunk size change.
+
 2007-07-06 [Version 1.2.3 released]
 
 2007-06-19  Paul Lindner  <lindner@mirth.inuus.com>
@@ -145,7 +152,7 @@
 
 2006-11-25
 	* Steve Peters <steve@fisharerojo.org>: OpenBSD has a malloc.h,
-	but warns to use stdlib.h instead
+	  but warns to use stdlib.h instead
 
 2006-11-22
 	* Steven Grimm <sgrimm@facebook.com>: Add support for multithreaded
@@ -153,8 +160,15 @@
 	  doc/threads.txt for details.
 
 2006-11-13
-	* Iain Wade <iwade@optusnet.com.au>: Fix for UDP responses on non-"get"
-	 commands.
+  	* Iain Wade <iwade@optusnet.com.au>: Fix for UDP responses on non-"get"
+  	  commands.
+
+2006-10-31
+	* Steven Grimm <sgrimm@facebook.com>: Add a new administrative command,
+	  "flush_regex", which expires all keys matching a regular expression.
+	  THIS COMMAND SHOULD BE USED SPARINGLY -- it will lock up the server
+	  while it runs. It is intended for debugging and disaster recovery,
+	  not for normal day-to-day use.
 
 2006-10-15
 	* Steven Grimm <sgrimm@facebook.com>: Dynamic sizing of hashtable to

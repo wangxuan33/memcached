@@ -205,7 +205,7 @@ static void item_unlink_q(item *it) {
 
 int do_item_link(item *it) {
     assert((it->it_flags & (ITEM_LINKED|ITEM_SLABBED)) == 0);
-    assert(it->nbytes < 1048576);
+    assert(it->nbytes < (1024 * 1024));  /* 1MB max size */
     it->it_flags |= ITEM_LINKED;
     it->time = current_time;
     assoc_insert(it);
@@ -266,8 +266,8 @@ int do_item_replace(item *it, item *new_it) {
 }
 
 /*@null@*/
-char *item_cachedump(const unsigned int slabs_clsid, const unsigned int limit, unsigned int *bytes) {
-    int memlimit = 2097152; /* 2097152: (2 * 1024 * 1024) */
+char *do_item_cachedump(const unsigned int slabs_clsid, const unsigned int limit, unsigned int *bytes) {
+    int memlimit = 2 * 1024 * 1024;   /* 2MB max response size */
     char *buffer;
     unsigned int bufcurr;
     item *it;
@@ -283,7 +283,7 @@ char *item_cachedump(const unsigned int slabs_clsid, const unsigned int limit, u
     bufcurr = 0;
 
     while (it != NULL && (limit == 0 || shown < limit)) {
-        len = snprintf(temp, 512, "ITEM %s [%d b; %lu s]\r\n", ITEM_key(it), it->nbytes - 2, it->time + stats.started);
+        len = snprintf(temp, sizeof(temp), "ITEM %s [%d b; %lu s]\r\n", ITEM_key(it), it->nbytes - 2, it->time + stats.started);
         if (bufcurr + len + 6 > memlimit)  /* 6 is END\r\n\0 */
             break;
         strcpy(buffer + bufcurr, temp);
@@ -299,31 +299,45 @@ char *item_cachedump(const unsigned int slabs_clsid, const unsigned int limit, u
     return buffer;
 }
 
-void item_stats(char *buffer, const int buflen) {
-    int i;
+char *do_item_stats(int *bytes) {
+    size_t bufleft = (size_t) LARGEST_ID * 80;
+    char *buffer = malloc(bufleft);
     char *bufcurr = buffer;
     rel_time_t now = current_time;
+    int i;
+    int linelen;
 
-    if (buflen < 4096) {
-        strcpy(buffer, "SERVER_ERROR out of memory");
-        return;
+    if (buffer == NULL) {
+        return NULL;
     }
 
     for (i = 0; i < LARGEST_ID; i++) {
-        if (tails[i] != NULL)
-            bufcurr += snprintf(bufcurr, (size_t)buflen, "STAT items:%d:number %u\r\nSTAT items:%d:age %u\r\n",
+        if (tails[i] != NULL) {
+            linelen = snprintf(bufcurr, bufleft, "STAT items:%d:number %u\r\nSTAT items:%d:age %u\r\n",
                                i, sizes[i], i, now - tails[i]->time);
+            if (linelen + sizeof("END\r\n") < bufleft) {
+                bufcurr += linelen;
+                bufleft -= linelen;
+            }
+            else {
+                /* The caller didn't allocate enough buffer space. */
+                break;
+            }
+        }
     }
-    memcpy(bufcurr, "END", 4);
-    return;
+    memcpy(bufcurr, "END\r\n", 6);
+    bufcurr += 5;
+
+    *bytes = bufcurr - buffer;
+    return buffer;
 }
 
 /* dumps out a list of objects of each size, with granularity of 32 bytes */
 /*@null@*/
-char* item_stats_sizes(int *bytes) {
+char* do_item_stats_sizes(int *bytes) {
     const int num_buckets = 32768;   /* max 1MB object, divided into 32 bytes size buckets */
     unsigned int *histogram = (unsigned int *)malloc((size_t)num_buckets * sizeof(int));
-    char *buf = (char *)malloc(2097152 * sizeof(char)); /* 2097152: 2 * 1024 * 1024 */
+    char *buf = (char *)malloc(2 * 1024 * 1024); /* 2MB max response size */
     int i;
 
     if (histogram == 0 || buf == 0) {

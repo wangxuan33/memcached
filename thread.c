@@ -310,7 +310,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     if (NULL != item) {
         conn *c = conn_new(item->sfd, item->init_state, item->event_flags,
                            item->read_buffer_size, item->is_udp, me->base);
-        if (!c) {
+        if (c == NULL) {
             if (item->is_udp) {
                 fprintf(stderr, "Can't listen for events on UDP socket\n");
                 exit(1);
@@ -492,7 +492,52 @@ void mt_item_flush_expired() {
     pthread_mutex_unlock(&cache_lock);
 }
 
+/*
+ * Dumps part of the cache
+ */
+char *mt_item_cachedump(unsigned int slabs_clsid, unsigned int limit, unsigned int *bytes) {
+    char *ret;
+
+    pthread_mutex_lock(&cache_lock);
+    ret = do_item_cachedump(slabs_clsid, limit, bytes);
+    pthread_mutex_unlock(&cache_lock);
+    return ret;
+}
+
+/*
+ * Dumps statistics about slab classes
+ */
+char *mt_item_stats(int *bytes) {
+    char *ret;
+
+    pthread_mutex_lock(&cache_lock);
+    ret = do_item_stats(bytes);
+    pthread_mutex_unlock(&cache_lock);
+    return ret;
+}
+
+/*
+ * Dumps a list of objects of each size in 32-byte increments
+ */
+char *mt_item_stats_sizes(int *bytes) {
+    char *ret;
+
+    pthread_mutex_lock(&cache_lock);
+    ret = do_item_stats_sizes(bytes);
+    pthread_mutex_unlock(&cache_lock);
+    return ret;
+}
+
 /****************************** HASHTABLE MODULE *****************************/
+
+int mt_assoc_expire_regex(char *pattern) {
+    int ret;
+
+    pthread_mutex_lock(&cache_lock);
+    ret = do_assoc_expire_regex(pattern);
+    pthread_mutex_unlock(&cache_lock);
+    return ret;
+}
 
 void mt_assoc_move_next_bucket() {
     pthread_mutex_lock(&cache_lock);

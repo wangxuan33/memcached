@@ -12,7 +12,7 @@
  *  Authors:
  *      Anatoly Vorobey <mellon@pobox.com>
  *      Brad Fitzpatrick <brad@danga.com>
-std *
+ *
  *  $Id$
  */
 #include "memcached.h"
@@ -168,7 +168,7 @@ static void settings_init(void) {
     settings.port = 11211;
     settings.udpport = 0;
     settings.interf.s_addr = htonl(INADDR_ANY);
-    settings.maxbytes = 67108864; /* default is 64MB: (64 * 1024 * 1024) */
+    settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
     settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
     settings.verbose = 0;
     settings.oldest_live = 0;
@@ -246,7 +246,7 @@ static int freecurr;
 static void conn_init(void) {
     freetotal = 200;
     freecurr = 0;
-    if (!(freeconns = (conn **)malloc(sizeof(conn *) * freetotal))) {
+    if ((freeconns = (conn **)malloc(sizeof(conn *) * freetotal)) == NULL) {
         perror("malloc()");
     }
     return;
@@ -812,6 +812,19 @@ static size_t tokenize_command(char *command, token_t *tokens, const size_t max_
     return ntokens;
 }
 
+/* set up a connection to write a buffer then free it, used for stats */
+static void write_and_free(conn *c, char *buf, int bytes) {
+    if (buf) {
+        c->write_and_free = buf;
+        c->wcurr = buf;
+        c->wbytes = bytes;
+        conn_set_state(c, conn_write);
+        c->write_and_go = conn_read;
+    } else {
+        out_string(c, "SERVER_ERROR out of memory");
+    }
+}
+
 inline static void process_stats_detail(conn *c, const char *command) {
     assert(c != NULL);
 
@@ -826,16 +839,7 @@ inline static void process_stats_detail(conn *c, const char *command) {
     else if (strcmp(command, "dump") == 0) {
         int len;
         char *stats = stats_prefix_dump(&len);
-        if (NULL != stats) {
-            c->write_and_free = stats;
-            c->wcurr = stats;
-            c->wbytes = len;
-            conn_set_state(c, conn_write);
-            c->write_and_go = conn_read;
-        }
-        else {
-            out_string(c, "SERVER_ERROR");
-        }
+        write_and_free(c, stats, len);
     }
     else {
         out_string(c, "CLIENT_ERROR usage: stats detail on|off|dump");
@@ -936,7 +940,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         int fd;
         int res;
 
-        if (!(wbuf = (char *)malloc(wsize))) {
+        if ((wbuf = (char *)malloc(wsize)) == NULL) {
             out_string(c, "SERVER_ERROR out of memory");
             return;
         }
@@ -959,12 +963,8 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
             free(wbuf); close(fd);
             return;
         }
-        memcpy(wbuf + res, "END\r\n", 6);
-        c->write_and_free = wbuf;
-        c->wcurr = wbuf;
-        c->wbytes = res + 5; // Don't write the terminal '\0'
-        conn_set_state(c, conn_write);
-        c->write_and_go = conn_read;
+        memcpy(wbuf + res, "END\r\n", 5);
+        write_and_free(c, wbuf, res + 5);
         close(fd);
         return;
     }
@@ -989,38 +989,21 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         }
 
         buf = item_cachedump(id, limit, &bytes);
-        if (buf == 0) {
-            out_string(c, "SERVER_ERROR out of memory");
-            return;
-        }
-
-        c->write_and_free = buf;
-        c->wcurr = buf;
-        c->wbytes = bytes;
-        conn_set_state(c, conn_write);
-        c->write_and_go = conn_read;
+        write_and_free(c, buf, bytes);
         return;
     }
 
     if (strcmp(subcommand, "slabs") == 0) {
         int bytes = 0;
         char *buf = slabs_stats(&bytes);
-        if (!buf) {
-            out_string(c, "SERVER_ERROR out of memory");
-            return;
-        }
-        c->write_and_free = buf;
-        c->wcurr = buf;
-        c->wbytes = bytes;
-        conn_set_state(c, conn_write);
-        c->write_and_go = conn_read;
+        write_and_free(c, buf, bytes);
         return;
     }
 
     if (strcmp(subcommand, "items") == 0) {
-        char buffer[4096];
-        item_stats(buffer, 4096);
-        out_string(c, buffer);
+        int bytes = 0;
+        char *buf = item_stats(&bytes);
+        write_and_free(c, buf, bytes);
         return;
     }
 
@@ -1035,16 +1018,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
     if (strcmp(subcommand, "sizes") == 0) {
         int bytes = 0;
         char *buf = item_stats_sizes(&bytes);
-        if (! buf) {
-            out_string(c, "SERVER_ERROR out of memory");
-            return;
-        }
-
-        c->write_and_free = buf;
-        c->wcurr = buf;
-        c->wbytes = bytes;
-        conn_set_state(c, conn_write);
-        c->write_and_go = conn_read;
+        write_and_free(c, buf, bytes);
         return;
     }
 
@@ -1133,7 +1107,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens)
 
             key_token++;
         }
-
         /*
          * If the command string hasn't been fully processed, get the next set
          * of tokens.
@@ -1597,6 +1570,14 @@ static void process_command(conn *c, char *command) {
 #else
         out_string(c, "CLIENT_ERROR Slab reassignment not supported");
 #endif
+
+    } else if (ntokens == 3 && (strcmp(tokens[COMMAND_TOKEN].value, "flush_regex") == 0)) {
+        if (assoc_expire_regex(tokens[COMMAND_TOKEN + 1].value)) {
+            out_string(c, "DELETED");
+        }
+        else {
+            out_string(c, "CLIENT_ERROR Bad regular expression (or regex not supported)");
+        }
     } else if (ntokens == 3 && (strcmp(tokens[COMMAND_TOKEN].value, "verbosity") == 0)) {
         process_verbosity_command(c, tokens, ntokens);
     } else {
@@ -2430,7 +2411,7 @@ static void save_pid(const pid_t pid, const char *pid_file) {
     if (pid_file == NULL)
         return;
 
-    if (!(fp = fopen(pid_file, "w"))) {
+    if ((fp = fopen(pid_file, "w")) == NULL) {
         fprintf(stderr, "Could not open the pid file %s for writing\n", pid_file);
         return;
     }
@@ -2733,7 +2714,10 @@ int main (int argc, char **argv) {
     /* initialise deletion array and timer event */
     deltotal = 200;
     delcurr = 0;
-    todelete = malloc(sizeof(item *) * deltotal);
+    if ((todelete = malloc(sizeof(item *) * deltotal)) == NULL) {
+        perror("failed to allocate memory for deletion array");
+        exit(EXIT_FAILURE);
+    }
     delete_handler(0, 0, 0); /* sets up the event */
     /* create the initial listening udp connection, monitored on all threads */
     if (u_socket > -1) {

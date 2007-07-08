@@ -10,7 +10,7 @@
  *
  * The rest of the file is licensed under the BSD license.  See LICENSE.
  *
- * $Id$
+ * $Id: assoc.c 337 2006-09-04 05:29:05Z bradfitz $
  */
 
 #include "memcached.h"
@@ -25,6 +25,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#ifdef HAVE_REGEX_H
+#include <regex.h>
+#endif
 
 /*
  * Since the hash function does bit manipulation, it needs to know
@@ -613,4 +616,37 @@ void assoc_delete(const char *key, const size_t nkey) {
     /* Note:  we never actually get here.  the callers don't delete things
        they can't find. */
     assert(*before != 0);
+}
+
+/* marks all items whose keys match a regular expression as expired. */
+int do_assoc_expire_regex(char *pattern) {
+#ifdef HAVE_REGEX_H
+    regex_t regex;
+    int bucket;
+    item *it;
+
+    if (regcomp(&regex, pattern, REG_EXTENDED | REG_NOSUB))
+        return 0;
+    for (bucket = 0; bucket < hashsize(hashpower); bucket++) {
+        for (it = primary_hashtable[bucket]; it != NULL; it = it->h_next) {
+            if (regexec(&regex, ITEM_key(it), 0, NULL, 0) == 0) {
+                /* the item matches; mark it expired. */
+                it->exptime = 1;
+            }
+        }
+    }
+    if (expanding) {
+        for (bucket = expand_bucket; bucket < hashsize(hashpower-1); bucket++) {
+            for (it = old_hashtable[bucket]; it != NULL; it = it->h_next) {
+                if (regexec(&regex, ITEM_key(it), 0, NULL, 0) == 0) {
+                    /* the item matches; mark it expired. */
+                    it->exptime = 1;
+                }
+            }
+        }
+    }
+    return 1; /* success */
+#else
+    return 0;
+#endif
 }

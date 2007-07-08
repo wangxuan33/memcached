@@ -392,6 +392,15 @@ The delay option allows you to have them reset in e.g. 10 second
 intervals (by passing 0 to the first, 10 to the second, 20 to the
 third, etc. etc.).
 
+"flush_regex" is a command with an optional string argument. It will
+expire all items whose keys match the given regular expression. THIS
+COMMAND SHOULD NOT BE USED IN NORMAL OPERATION! It is very expensive and
+will lock up the server while it runs, preventing any other client requests
+from being serviced. It is intended for debugging and disaster recovery
+purposes, not as a general-purpose deletion mechanism. Note that if you
+have more than one memcached server, you will need to run this command on
+each of them, since there may be keys matching a regular expression on any
+host in a memcached cluster.
 
 "version" is a command with no arguments:
 
