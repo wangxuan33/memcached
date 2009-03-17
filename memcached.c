@@ -4025,6 +4025,7 @@ static void usage(void) {
            "              to prevent starvation.  default 20\n");
     printf("-C            Disable use of CAS\n");
     printf("-b            Set the backlog queue limit (default 1024)\n");
+    printf("-o            Additional options. e.g. (-o \"opta=13,optb=892\")\n");
     return;
 }
 
@@ -4172,6 +4173,64 @@ static int enable_large_pages(void) {
 }
 #endif
 
+
+/*
+ * parse the 'odd-options' parameter, which is supplied as a comma
+ * delimited string.
+ */
+static int parse_options(const char *str)
+{
+    char *copy = NULL;
+    char *argument = NULL;
+    char *next = NULL;
+    char *key = NULL, *value = NULL;
+
+    assert(str);
+
+    /* make a copy of the supplied string, because we will be
+       splitting it into its key/value pairs. We dont want to mangle
+       the string that was supplied. */
+    copy = strdup(str);
+    assert(copy);
+
+    argument = copy;
+    next = argument;
+    while (next != NULL && *next != '\0') {
+        argument = strsep(&next, ",");
+        value = argument;
+        key = strsep(&value, "=");
+        if (value == NULL) {
+            /* this means that the supplied string ended with a '='
+               which is invalid. */
+            fprintf(stderr, "Incomplete options (-o) string.\n"
+                    "Each option should have a value.\n");
+            return 1;
+        }
+
+        /* remove spaces from the begining of the key. */
+        while(*key==' ' && *key!='\0') { key++; }
+
+        if (strlen(key) > 0 && strlen(value) > 0) {
+
+            /* now we do actions on the parameters. */
+            /* Example placeholder option until some are added */
+            if (strcmp(key, "OPTIONS,GO,HERE") == 0) {
+                /* Parse an option */
+            } else {
+                fprintf(stderr, "Unknown -o option: '%s'\n", key);
+                return 1;
+            }
+        } else {
+            fprintf(stderr, "Incomplete options (-o) string.\n");
+            return 1;
+        }
+    }
+
+    free(copy);
+    return 0;
+}
+
+
 int main (int argc, char **argv) {
     int c;
     bool lock_memory = false;
@@ -4222,15 +4281,15 @@ int main (int argc, char **argv) {
           "D:"  /* prefix delimiter? */
           "L"   /* Large memory pages */
           "R:"  /* max requests per event */
-          "C"  /* Disable use of CAS */
-          "b:"   /* backlog queue limit */
+          "C"   /* Disable use of CAS */
+          "b:"  /* backlog queue limit */
+          "o:"  /* Extended Options */
         ))) {
         switch (c) {
         case 'a':
             /* access for unix domain socket, as octal mask (like chmod)*/
             settings.access= strtol(optarg,NULL,8);
             break;
-
         case 'U':
             settings.udpport = atoi(optarg);
             break;
@@ -4324,6 +4383,12 @@ int main (int argc, char **argv) {
             break;
         case 'b' :
             settings.backlog = atoi(optarg);
+            break;
+        case 'o' :
+            if (parse_options(optarg) != 0) {
+                /* parsing of options failed.  exit. */
+                return 1;
+            }
             break;
         default:
             fprintf(stderr, "Illegal argument \"%c\"\n", c);
