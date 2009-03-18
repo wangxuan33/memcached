@@ -4025,7 +4025,9 @@ static void usage(void) {
            "              to prevent starvation.  default 20\n");
     printf("-C            Disable use of CAS\n");
     printf("-b            Set the backlog queue limit (default 1024)\n");
-    printf("-o            Additional options. e.g. (-o \"opta=13,optb=892\")\n");
+    printf("-o            Additional options. e.g. (-o \"opta=13,optb=892\")\n"
+           "              Available options:\n"
+           "                backlog - set the TCP backlog queue size (1024)");
     return;
 }
 
@@ -4213,9 +4215,8 @@ static int parse_options(const char *str)
         if (strlen(key) > 0 && strlen(value) > 0) {
 
             /* now we do actions on the parameters. */
-            /* Example placeholder option until some are added */
-            if (strcmp(key, "OPTIONS,GO,HERE") == 0) {
-                /* Parse an option */
+            if (strcmp(key, "backlog") == 0) {
+                settings.backlog = atoi(value);
             } else {
                 fprintf(stderr, "Unknown -o option: '%s'\n", key);
                 return 1;
