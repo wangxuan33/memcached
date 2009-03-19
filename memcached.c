@@ -4388,12 +4388,12 @@ int main (int argc, char **argv) {
         case 'o' :
             if (parse_options(optarg) != 0) {
                 /* parsing of options failed.  exit. */
-                return 1;
+                return EX_USAGE;
             }
             break;
         default:
             fprintf(stderr, "Illegal argument \"%c\"\n", c);
-            return 1;
+            return EX_USAGE;
         }
     }
 
